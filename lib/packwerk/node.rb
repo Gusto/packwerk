@@ -103,6 +103,10 @@ module Packwerk
         Location.new(location.line, location.column)
       end
 
+      def constant?(node)
+        type(node) == CONSTANT
+      end
+
       def method_arguments(method_call_node)
         raise TypeError unless type(method_call_node) == METHOD_CALL
 
@@ -223,7 +227,7 @@ module Packwerk
         # "Class.new"
         # "Module.new"
         type(node) == METHOD_CALL &&
-          type(receiver(node)) == CONSTANT &&
+          constant?(receiver(node)) &&
           ["Class", "Module"].include?(constant_name(receiver(node))) &&
           method_name(node) == :new
       end
@@ -231,7 +235,7 @@ module Packwerk
       def name_from_block_definition(node)
         if method_name(method_call_node(node)) == :class_eval
           receiver = receiver(node)
-          constant_name(receiver) if receiver && type(receiver) == CONSTANT
+          constant_name(receiver) if receiver && constant?(receiver)
         end
       end
 
