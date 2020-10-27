@@ -17,12 +17,10 @@ module Packwerk
       if constant_in_module_or_class_definition?(node, ancestors: ancestors)
         fully_qualify_constant(node, ancestors: ancestors)
       else
-        begin
-          Node.constant_name(node)
-        rescue Node::TypeError
-          nil
-        end
+        Node.constant_name(node)
       end
+    rescue Node::TypeError
+      nil
     end
 
     private
