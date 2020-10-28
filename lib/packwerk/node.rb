@@ -29,7 +29,11 @@ module Packwerk
           # (module (const nil :Foo) (nil))
           #   "module Foo; end"
           identifier = class_or_module_node.children[0]
-          constant_name(identifier)
+          begin
+            constant_name(identifier)
+          rescue Node::TypeError
+            nil
+          end
         else
           raise TypeError
         end
