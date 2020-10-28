@@ -63,6 +63,14 @@ module Packwerk
         end
       end
 
+      def method_call?(node)
+        type(node) == METHOD_CALL
+      end
+
+      def symbol?(node)
+        type(node) == SYMBOL
+      end
+
       def each_child(node)
         if block_given?
           node.children.each do |child|
