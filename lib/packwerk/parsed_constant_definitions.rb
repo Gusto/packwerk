@@ -38,16 +38,20 @@ module Packwerk
     private
 
     def collect_local_definitions_from_root(node, current_namespace_path = [])
-      if Node.type(node) == Node::CONSTANT_ASSIGNMENT
-        add_definition(Node.constant_name(node), current_namespace_path, Node.name_location(node))
-      elsif Node.module_name_from_definition(node)
-        # handle compact constant nesting (e.g. "module Sales::Order")
-        tempnode = node
-        while (tempnode = Node.each_child(tempnode).find { |n| Node.type(n) == Node::CONSTANT })
-          add_definition(Node.constant_name(tempnode), current_namespace_path, Node.name_location(tempnode))
-        end
+      begin
+        if Node.type(node) == Node::CONSTANT_ASSIGNMENT
+          add_definition(Node.constant_name(node), current_namespace_path, Node.name_location(node))
+        elsif Node.module_name_from_definition(node)
+          # handle compact constant nesting (e.g. "module Sales::Order")
+          tempnode = node
+          while (tempnode = Node.each_child(tempnode).find { |n| Node.type(n) == Node::CONSTANT })
+            add_definition(Node.constant_name(tempnode), current_namespace_path, Node.name_location(tempnode))
+          end
 
-        current_namespace_path += Node.class_or_module_name(node).split("::")
+          current_namespace_path += Node.class_or_module_name(node).split("::")
+        end
+      rescue Node::TypeError
+        nil
       end
 
       Node.each_child(node) { |child| collect_local_definitions_from_root(child, current_namespace_path) }
