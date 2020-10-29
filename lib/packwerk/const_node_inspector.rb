@@ -24,12 +24,10 @@ module Packwerk
 
         "::" + name
       else
-        begin
-          Node.constant_name(node)
-        rescue Node::TypeError
-          nil
-        end
+        Node.constant_name(node)
       end
+    rescue Node::TypeError
+      nil
     end
 
     private
