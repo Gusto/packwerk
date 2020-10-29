@@ -188,7 +188,7 @@ module Packwerk
       end
 
       def type(node)
-        node.type if node
+        node.type if node # rubocop:disable Style/SafeNavigation
       end
 
       def value_from_hash(hash_node, key)
