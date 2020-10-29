@@ -188,7 +188,7 @@ module Packwerk
       end
 
       def type(node)
-        node && node.type
+        node.type if node
       end
 
       def value_from_hash(hash_node, key)
