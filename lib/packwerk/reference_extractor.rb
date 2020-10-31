@@ -43,6 +43,8 @@ module Packwerk
       end
 
       reference_from_constant(constant_name, node: node, ancestors: ancestors, file_path: file_path) if constant_name
+    rescue Node::TypeError
+      nil
     end
 
     private
