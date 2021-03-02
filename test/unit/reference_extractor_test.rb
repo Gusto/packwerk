@@ -8,19 +8,27 @@ require "packwerk/node"
 
 module Packwerk
   class ReferenceExtractorTest < Minitest::Test
-    def setup
-      @root_path = "test/fixtures/skeleton/"
-      load_paths =
-        Dir.glob(File.join(@root_path, "components/*/{app,test}/*{/concerns,}"))
-          .map { |p| Pathname.new(p).relative_path_from(@root_path).to_s }
+    include ApplicationFixtureHelper
 
-      resolver = ConstantResolver.new(root_path: @root_path, load_paths: load_paths)
-      packages = ::Packwerk::PackageSet.load_all_from(@root_path)
+    def setup
+      setup_application_fixture
+      use_template(:skeleton)
+
+      load_paths =
+        Dir.glob(to_app_path("components/*/{app,test}/*{/concerns,}"))
+          .map { |p| Pathname.new(p).relative_path_from(app_dir).to_s }
+
+      resolver = ConstantResolver.new(root_path: app_dir, load_paths: load_paths)
+      packages = ::Packwerk::PackageSet.load_all_from(app_dir)
 
       @context_provider = ::Packwerk::ConstantDiscovery.new(
         constant_resolver: resolver,
         packages: packages
       )
+    end
+
+    def teardown
+      teardown_application_fixture
     end
 
     test "finds simple cross package references" do
@@ -48,6 +56,15 @@ module Packwerk
 
       reference = references.first
       assert_equal "::Order::Extension", reference.constant.name
+    end
+
+    test "reports properly on 'self anchored' constants" do
+      references = process(
+        "class Entry; self::SOME_CONSTANT = :a; end",
+        "components/timeline/app/models/entry.rb"
+      )
+
+      assert_equal 0, references.count
     end
 
     test "handles inherited class constants in the surrounding namespace" do
@@ -208,7 +225,7 @@ module Packwerk
 
       def constant_name_from_node(node, ancestors:)
         return nil unless @association
-        return nil unless Node.type(node) == Node::METHOD_CALL
+        return nil unless Node.method_call?(node)
 
         args = Node.method_arguments(node)
         if @expected_args && @expected_args != args
@@ -223,13 +240,13 @@ module Packwerk
 
     def process(code, file_path, constant_name_inspectors = DEFAULT_INSPECTORS)
       root_node = ParserTestHelper.parse(code)
-      file_path = File.join(@root_path, file_path)
+      file_path = to_app_path(file_path)
 
       extractor = ::Packwerk::ReferenceExtractor.new(
         context_provider: @context_provider,
         constant_name_inspectors: constant_name_inspectors,
         root_node: root_node,
-        root_path: @root_path
+        root_path: app_dir
       )
 
       find_references_in_ast(root_node, ancestors: [], extractor: extractor, file_path: file_path)

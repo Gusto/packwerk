@@ -13,6 +13,7 @@ module Packwerk
     extend T::Sig
     include ReferenceLister
 
+    sig { params(package: Packwerk::Package, filepath: String).void }
     def initialize(package, filepath)
       @package = package
       @filepath = filepath
@@ -34,6 +35,7 @@ module Packwerk
       violated_constants_found.fetch("violations", []).include?(violation_type.serialize)
     end
 
+    sig { params(reference: Packwerk::Reference, violation_type: String).void }
     def add_entries(reference, violation_type)
       package_violations = @new_entries.fetch(reference.constant.package.name, {})
       entries_for_file = package_violations[reference.constant.name] ||= {}
@@ -47,6 +49,25 @@ module Packwerk
       @new_entries[reference.constant.package.name] = package_violations
     end
 
+    sig { returns(T::Boolean) }
+    def stale_violations?
+      prepare_entries_for_dump
+      deprecated_references.any? do |package, package_violations|
+        package_violations.any? do |constant_name, entries_for_file|
+          new_entries_violation_types = @new_entries.dig(package, constant_name, "violations")
+          return true if new_entries_violation_types.nil?
+          if entries_for_file["violations"].all? { |type| new_entries_violation_types.include?(type) }
+            stale_violations =
+              entries_for_file["files"] - Array(@new_entries.dig(package, constant_name, "files"))
+            stale_violations.present?
+          else
+            return true
+          end
+        end
+      end
+    end
+
+    sig { void }
     def dump
       if @new_entries.empty?
         File.delete(@filepath) if File.exist?(@filepath)
@@ -69,6 +90,7 @@ module Packwerk
 
     private
 
+    sig { returns(Hash) }
     def prepare_entries_for_dump
       @new_entries.each do |package_name, package_violations|
         package_violations.each do |_, entries_for_file|
@@ -81,6 +103,7 @@ module Packwerk
       @new_entries = @new_entries.sort.to_h
     end
 
+    sig { returns(Hash) }
     def deprecated_references
       @deprecated_references ||= if File.exist?(@filepath)
         YAML.load_file(@filepath) || {}

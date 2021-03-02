@@ -18,19 +18,25 @@ module Packwerk
 
     FakeResult = Struct.new(:ok?, :error_value)
 
+    class FakeOffense < Packwerk::Offense
+      def initialize; end
+    end
+
+    class FakeRunContext < Packwerk::RunContext
+      def initialize; end
+    end
+
+    class FakeConfiguration < Packwerk::Configuration
+      def initialize; end
+    end
+
     test "#execute_command with the subcommand check starts processing files" do
       violation_message = "This is a violation of code health."
-      offense = stub(error?: true, to_s: violation_message)
+      offense = FakeOffense.new
+      offense.stubs(:to_s).returns(violation_message)
 
-      file_processor = stub
-      file_processor
-        .stubs(:call)
-        .returns([offense])
-        .then
-        .returns([])
-
-      run_context = stub
-      run_context.stubs(:file_processor).at_least_once.returns(file_processor)
+      run_context = FakeRunContext.new
+      run_context.stubs(:process_file).at_least_once.returns([offense])
 
       string_io = StringIO.new
 
@@ -50,19 +56,15 @@ module Packwerk
     test "#execute_command with the subcommand check traps the interrupt signal" do
       interrupt_message = "Manually interrupted. Violations caught so far are listed below:"
       violation_message = "This is a violation of code health."
-      offense = stub(to_s: violation_message)
+      offense = FakeOffense.new
+      offense.stubs(:to_s).returns(violation_message)
 
-      file_processor = stub
-      file_processor
-        .stubs(:call)
+      run_context = FakeRunContext.new
+      run_context.stubs(:process_file)
+        .at_least(2)
         .returns([offense])
         .raises(Interrupt)
         .returns([offense])
-
-      run_context = stub
-      run_context
-        .stubs(:file_processor)
-        .at_least_once.returns(file_processor)
 
       string_io = StringIO.new
 
@@ -113,11 +115,13 @@ module Packwerk
 
     test "#execute_command with init subcommand runs application validation generator for non-Rails app" do
       string_io = StringIO.new
-      configuration = stub(
+      configuration = FakeConfiguration.new
+      configuration.stubs(
         root_path: @temp_dir,
         load_paths: ["path"],
         package_paths: "**/",
-        custom_associations: ["cached_belongs_to"]
+        custom_associations: ["cached_belongs_to"],
+        inflections_file: "config/inflections.yml"
       )
       cli = ::Packwerk::Cli.new(configuration: configuration, out: string_io)
 
@@ -130,11 +134,13 @@ module Packwerk
 
     test "#execute_command with init subcommand runs application validation generator, fails and prints error" do
       string_io = StringIO.new
-      configuration = stub(
+      configuration = FakeConfiguration.new
+      configuration.stubs(
         root_path: @temp_dir,
         load_paths: ["path"],
         package_paths: "**/",
-        custom_associations: ["cached_belongs_to"]
+        custom_associations: ["cached_belongs_to"],
+        inflections_file: "config/inflections.yml"
       )
       cli = ::Packwerk::Cli.new(configuration: configuration, out: string_io)
 

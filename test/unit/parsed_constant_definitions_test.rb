@@ -106,7 +106,7 @@ module Packwerk
     test "doesn't count definition as reference" do
       ast = parse_code("class HelloWorld; end")
 
-      const_node = Node.each_child(ast).find { |n| Node.type(n) == Node::CONSTANT }
+      const_node = Node.each_child(ast).find { |n| Node.constant?(n) }
 
       definitions = ParsedConstantDefinitions.new(
         root_node: ast
@@ -129,6 +129,13 @@ module Packwerk
     test ".reference_qualifications generates all possible qualifications for a reference" do
       qualifications =
         ParsedConstantDefinitions.reference_qualifications("Order", namespace_path: ["Sales", "Internal"])
+
+      assert_equal ["::Order", "::Sales::Order", "::Sales::Internal::Order"].sort, qualifications.sort
+    end
+
+    test ".reference_qualifications generates all possible qualifications for a reference even when there are nil nodes in the namespace path" do
+      qualifications =
+        ParsedConstantDefinitions.reference_qualifications("Order", namespace_path: [nil, "Sales", "Internal"])
 
       assert_equal ["::Order", "::Sales::Order", "::Sales::Internal::Order"].sort, qualifications.sort
     end

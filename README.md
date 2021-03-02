@@ -1,9 +1,16 @@
 # Packwerk [![Build Status](https://github.com/Shopify/packwerk/workflows/CI/badge.svg)](https://github.com/Shopify/packwerk/actions?query=workflow%3ACI)
 
+## NOTE: Packwerk is considered to be feature-complete for Shopify's uses. We are currently accepting bug fixes only, and it is not being actively developed. Please fork this project if you are interested in adding new features.
+
+> "I know who you are and because of that I know what you do."  
+> This knowledge is a dependency that raises the cost of change.  
+
+-- _Sandi Metz, Practical Object-Oriented Design in Ruby_
+
 Packwerk is a Ruby gem used to enforce boundaries and modularize Rails applications.
 
 Packwerk can be used to:
-* Combine group of files into packages
+* Combine groups of files into packages
 * Define package-level constant visibility (i.e. have publicly accessible constants)
 * Enforce privacy (inbound) and dependency (outbound) boundaries between packages
 * Help existing codebases to become more modular without obstructing development

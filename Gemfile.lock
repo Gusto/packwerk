@@ -85,7 +85,7 @@ GIT
 PATH
   remote: .
   specs:
-    packwerk (1.0.0)
+    packwerk (1.1.2)
       activesupport (>= 5.2)
       ast
       better_html
@@ -137,6 +137,8 @@ GEM
     mini_mime (1.0.2)
     mini_portile2 (2.4.0)
     minitest (5.14.0)
+    minitest-focus (1.2.1)
+      minitest (>= 4, < 6)
     mocha (1.11.2)
     nio4r (2.5.2)
     nokogiri (1.10.9)
@@ -180,7 +182,7 @@ GEM
     smart_properties (1.15.0)
     sorbet (0.5.5898)
       sorbet-static (= 0.5.5898)
-    sorbet-runtime (0.5.5898)
+    sorbet-runtime (0.5.6049)
     sorbet-static (0.5.5898-universal-darwin-19)
     spoom (1.0.4)
       colorize
@@ -220,6 +222,7 @@ DEPENDENCIES
   byebug
   constant_resolver
   m
+  minitest-focus
   mocha
   packwerk!
   rails!

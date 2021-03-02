@@ -9,15 +9,15 @@ require "yaml"
 require "packwerk/package_set"
 require "packwerk/graph"
 require "packwerk/inflector"
+require "packwerk/application_load_paths"
 
 module Packwerk
   class ApplicationValidator
-    def initialize(config_file_path:, application_load_paths:, configuration:)
+    def initialize(config_file_path:, configuration:)
       @config_file_path = config_file_path
       @configuration = configuration
 
-      # Load paths should be from the application
-      @application_load_paths = application_load_paths.sort.uniq
+      @application_load_paths = ApplicationLoadPaths.extract_relevant_paths
     end
 
     Result = Struct.new(:ok?, :error_value)
@@ -32,19 +32,10 @@ module Packwerk
         check_acyclic_graph,
         check_package_manifest_paths,
         check_valid_package_dependencies,
-        check_root_package_exist,
+        check_root_package_exists,
       ]
 
-      results.reject!(&:ok?)
-
-      if results.empty?
-        Result.new(true)
-      else
-        Result.new(
-          false,
-          results.map(&:error_value).join("\n===\n")
-        )
-      end
+      merge_results(results)
     end
 
     def check_autoload_path_cache
@@ -65,51 +56,37 @@ module Packwerk
     def check_package_manifests_for_privacy
       privacy_settings = package_manifests_settings_for("enforce_privacy")
 
-      autoload_paths = @configuration.load_paths
-
       resolver = ConstantResolver.new(
         root_path: @configuration.root_path,
-        load_paths: autoload_paths
+        load_paths: @configuration.load_paths
       )
 
-      errors = []
+      results = []
 
-      privacy_settings.each do |filepath, setting|
+      privacy_settings.each do |config_file_path, setting|
         next unless setting.is_a?(Array)
+        constants = setting
 
-        setting.each do |constant|
-          # make sure the constant can be loaded
-          constant.constantize # rubocop:disable Sorbet/ConstantsFromStrings
-          context = resolver.resolve(constant)
+        assert_constants_can_be_loaded(constants)
 
-          unless context
-            errors << "#{constant}, listed in #{filepath.inspect}, could not be resolved"
-            next
+        constant_locations = constants.map { |c| [c, resolver.resolve(c)&.location] }
+
+        constant_locations.each do |name, location|
+          results << if location
+            check_private_constant_location(name, location, config_file_path)
+          else
+            private_constant_unresolvable(name, config_file_path)
           end
-
-          expected_filename = constant.underscore + ".rb"
-
-          # We don't support all custom inflections yet, so we may accidentally resolve constants to the
-          # file that defines their parent namespace. This restriction makes sure that we don't.
-          next if context.location.end_with?(expected_filename)
-
-          errors << "Explicitly private constants need to have their own files.\n"\
-            "#{constant}, listed in #{filepath.inspect}, was resolved to #{context.location.inspect}.\n"\
-            "It should be in something like #{expected_filename.inspect}"
         end
       end
 
-      if errors.empty?
-        Result.new(true)
-      else
-        Result.new(false, errors.join("\n---\n"))
-      end
+      merge_results(results, separator: "\n---\n")
     end
 
     def check_package_manifest_syntax
       errors = []
 
-      package_manifests(package_glob).each do |f|
+      package_manifests.each do |f|
         hash = YAML.load_file(f)
         next unless hash
 
@@ -170,14 +147,12 @@ module Packwerk
     def check_inflection_file
       inflections_file = @configuration.inflections_file
 
-      test_inflections = ActiveSupport::Inflector::Inflections.new
-
-      Packwerk::Inflections::Default.apply_to(test_inflections)
-      Packwerk::Inflections::Custom.new(inflections_file).apply_to(test_inflections)
+      application_inflections = ActiveSupport::Inflector.inflections
+      packwerk_inflections = Packwerk::Inflector.from_file(inflections_file).inflections
 
       results = %i(plurals singulars uncountables humans acronyms).map do |type|
-        expected = ActiveSupport::Inflector.inflections.public_send(type).to_set
-        actual = test_inflections.public_send(type).to_set
+        expected = application_inflections.public_send(type).to_set
+        actual = packwerk_inflections.public_send(type).to_set
 
         if expected == actual
           Result.new(true)
@@ -195,24 +170,16 @@ module Packwerk
         end
       end
 
-      errors = results.reject(&:ok?)
-
-      if errors.empty?
-        Result.new(true)
-      else
-        Result.new(
-          false,
-          "Inflections specified in #{inflections_file} don't line up with application!\n" +
-            errors.map(&:error_value).join("\n")
-        )
-      end
+      merge_results(
+        results,
+        separator: "\n",
+        errors_headline: "Inflections specified in #{inflections_file} don't line up with application!\n"
+      )
     end
 
     def check_acyclic_graph
-      packages = Packwerk::PackageSet.load_all_from(".")
-
-      edges = packages.flat_map do |package|
-        package.dependencies.map { |dependency| [package, packages.fetch(dependency)] }
+      edges = package_set.flat_map do |package|
+        package.dependencies.map { |dependency| [package, package_set.fetch(dependency)] }
       end
       dependency_graph = Packwerk::Graph.new(*edges)
 
@@ -299,7 +266,7 @@ module Packwerk
       end
     end
 
-    def check_root_package_exist
+    def check_root_package_exists
       root_package_path = File.join(@configuration.root_path, "package.yml")
       all_packages_manifests = package_manifests(package_glob)
 
@@ -318,8 +285,7 @@ module Packwerk
     private
 
     def package_manifests_settings_for(setting)
-      package_manifests(package_glob)
-        .map { |f| [f, (YAML.load_file(File.join(f)) || {})[setting]] }
+      package_manifests.map { |f| [f, (YAML.load_file(File.join(f)) || {})[setting]] }
     end
 
     def format_yaml_strings(list)
@@ -330,12 +296,17 @@ module Packwerk
       @configuration.package_paths || "**"
     end
 
-    def package_manifests(glob_pattern)
-      PackageSet.package_paths(@configuration.root_path, glob_pattern).map(&:to_s)
+    def package_manifests(glob_pattern = package_glob)
+      PackageSet.package_paths(@configuration.root_path, glob_pattern)
+        .map { |f| File.realpath(f) }
     end
 
     def relative_paths(paths)
-      paths.map { |path| Pathname.new(path).relative_path_from(@configuration.root_path) }
+      paths.map { |path| relative_path(path) }
+    end
+
+    def relative_path(path)
+      Pathname.new(path).relative_path_from(@configuration.root_path)
     end
 
     def invalid_package_path?(path)
@@ -344,6 +315,55 @@ module Packwerk
 
       package_path = File.join(@configuration.root_path, path, Packwerk::PackageSet::PACKAGE_CONFIG_FILENAME)
       !File.file?(package_path)
+    end
+
+    def assert_constants_can_be_loaded(constants)
+      constants.each(&:constantize)
+      nil
+    end
+
+    def private_constant_unresolvable(name, config_file_path)
+      explicit_filepath = (name.start_with?("::") ? name[2..-1] : name).underscore + ".rb"
+
+      Result.new(
+        false,
+        "'#{name}', listed in #{config_file_path}, could not be resolved.\n"\
+        "This is probably because it is an autovivified namespace - a namespace module that doesn't have a\n"\
+        "file explicitly defining it. Packwerk currently doesn't support declaring autovivified namespaces as\n"\
+        "private. Add a #{explicit_filepath} file to explicitly define the constant."
+      )
+    end
+
+    def check_private_constant_location(name, location, config_file_path)
+      declared_package = package_set.package_from_path(relative_path(config_file_path))
+      constant_package = package_set.package_from_path(location)
+
+      if constant_package == declared_package
+        Result.new(true)
+      else
+        Result.new(
+          false,
+          "'#{name}' is declared as private in the '#{declared_package}' package but appears to be "\
+          "defined\nin the '#{constant_package}' package. Packwerk resolved it to #{location}."
+        )
+      end
+    end
+
+    def package_set
+      @package_set ||= Packwerk::PackageSet.load_all_from(@configuration.root_path, package_pathspec: package_glob)
+    end
+
+    def merge_results(results, separator: "\n===\n", errors_headline: "")
+      results.reject!(&:ok?)
+
+      if results.empty?
+        Result.new(true)
+      else
+        Result.new(
+          false,
+          errors_headline + results.map(&:error_value).join(separator)
+        )
+      end
     end
   end
 end
